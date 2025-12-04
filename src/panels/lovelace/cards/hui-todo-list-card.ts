@@ -303,13 +303,36 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               <div class="addRow">
                 <ha-textfield
                   class="addBox"
-                  .placeholder=${this.hass!.localize(
-                    "ui.panel.lovelace.cards.todo-list.add_item"
-                  )}
+                  placeholder="Add item name"
+                  name="name"
+                  required
                   @keydown=${this._addKeyPress}
                   @input=${this._clearAddError}
                   .disabled=${unavailable}
                 ></ha-textfield>
+
+                <ha-textfield
+                  class="addBox"
+                  placeholder="Quantity"
+                  name="quantity"
+                  type="number"
+                  min="1"
+                  @keydown=${this._addKeyPress}
+                  .disabled=${unavailable}
+                ></ha-textfield>
+                <ha-select
+                  name="store"
+                  class="addBox"
+                  label="Store"
+                  .disabled=${unavailable}
+                >
+                  <ha-list-item value="">None</ha-list-item>
+                  <ha-list-item value="ikea">IKEA</ha-list-item>
+                  <ha-list-item value="ica">ICA</ha-list-item>
+                  <ha-list-item value="biltema">Biltema</ha-list-item>
+                  <ha-list-item value="elgiganten">Elgiganten</ha-list-item>
+                </ha-select>
+
                 <ha-icon-button
                   class="addButton"
                   .path=${mdiPlus}
@@ -525,7 +548,14 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               @keydown=${this._handleKeydown}
             >
               <div class="column">
-                <span class="summary">${item.summary}</span>
+                <span class="summary">
+                  ${item.summary}
+                  ${item.quantity ? html` — ${item.quantity}` : ""}
+                  ${item.store
+                    ? html` <span class="store-tag">(${item.store})</span>`
+                    : ""}
+                </span>
+
                 ${item.description
                   ? html`<ha-markdown-element
                       class="description"
@@ -707,27 +737,95 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     return this.shadowRoot!.querySelector(".addBox") as HaTextField;
   }
 
-  private _addItem(ev): void {
-    const newItem = this._newItem;
-    const rawValue = newItem.value ?? "";
-    const value = rawValue.trim();
+  // private _addItem(ev): void {
+  //   const newItem = this._newItem;
+  //   const rawValue = newItem.value ?? "";
+  //   const value = rawValue.trim();
 
-    // Empty input: just clear error and do nothing
-    if (!value.length) {
-      this._addError = undefined;
+  //   // Empty input: just clear error and do nothing
+  //   if (!value.length) {
+  //     this._addError = undefined;
+  //     return;
+  //   }
+
+  //   const normalized = value.toLowerCase();
+
+  //   // Look for an existing item with the same summary (trimmed, case-insensitive)
+  //   const existing = this._items?.find((item) => {
+  //     const summary = (item.summary ?? "").trim().toLowerCase();
+  //     return summary === normalized;
+  //   });
+
+  //   if (existing) {
+  //     // If existing item is completed, "revive" it (set back to NeedsAction)
+  //     if (existing.status === TodoItemStatus.Completed) {
+  //       updateItem(this.hass!, this._entityId!, {
+  //         uid: existing.uid,
+  //         summary: existing.summary,
+  //         status: TodoItemStatus.NeedsAction,
+  //       });
+  //       this._addError = undefined;
+  //     } else {
+  //       // Already active: show a small message and do NOT create a duplicate
+  //       this._addError =
+  //         this.hass?.localize(
+  //           "ui.panel.lovelace.cards.todo-list.item_already_exists"
+  //         ) || "Item is already in the list";
+  //       // this._addError = msg;
+  //     }
+
+  //     newItem.value = "";
+  //     if (ev) {
+  //       newItem.focus();
+  //     }
+  //     return;
+  //   }
+
+  //   // No existing item: create a fresh one
+  //   createItem(this.hass!, this._entityId!, {
+  //     summary: value,
+  //   });
+
+  //   this._addError = undefined;
+  //   newItem.value = "";
+  //   if (ev) {
+  //     newItem.focus();
+  //   }
+  // }
+
+  private _addItem(ev): void {
+    const nameEl = this.shadowRoot!.querySelector(
+      'ha-textfield[name="name"]'
+    ) as any;
+    const qtyEl = this.shadowRoot!.querySelector(
+      'ha-textfield[name="quantity"]'
+    ) as any;
+    const storeEl = this.shadowRoot!.querySelector(
+      'ha-select[name="store"]'
+    ) as any;
+
+    const name = (nameEl?.value ?? "").trim();
+    const quantity = qtyEl?.value ? Number(qtyEl.value) : undefined;
+    const _store = storeEl?.value || undefined;
+
+    // Require name
+    if (!name.length) {
+      this._addError =
+        this.hass?.localize(
+          "ui.panel.lovelace.cards.todo-list.name_required"
+        ) || "Name is required";
       return;
     }
 
-    const normalized = value.toLowerCase();
+    const normalized = name.toLowerCase();
 
-    // Look for an existing item with the same summary (trimmed, case-insensitive)
-    const existing = this._items?.find((item) => {
-      const summary = (item.summary ?? "").trim().toLowerCase();
-      return summary === normalized;
-    });
+    // Check if item already exists
+    const existing = this._items?.find(
+      (item) => (item.summary ?? "").trim().toLowerCase() === normalized
+    );
 
     if (existing) {
-      // If existing item is completed, "revive" it (set back to NeedsAction)
+      // If completed → revive it
       if (existing.status === TodoItemStatus.Completed) {
         updateItem(this.hass!, this._entityId!, {
           uid: existing.uid,
@@ -736,31 +834,38 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         });
         this._addError = undefined;
       } else {
-        // Already active: show a small message and do NOT create a duplicate
+        // Already active → show error
         this._addError =
           this.hass?.localize(
             "ui.panel.lovelace.cards.todo-list.item_already_exists"
           ) || "Item is already in the list";
-        // this._addError = msg;
       }
 
-      newItem.value = "";
-      if (ev) {
-        newItem.focus();
-      }
+      // Clear name input and focus
+      nameEl.value = "";
+      if (ev) nameEl.focus();
       return;
     }
 
-    // No existing item: create a fresh one
+    // Build summary with quantity included visibly
+    const summaryText = quantity ? `${name} --- ${quantity}` : name;
+
+    // Create new item with optional quantity & store
     createItem(this.hass!, this._entityId!, {
-      summary: value,
+      summary: summaryText,
     });
 
+    // Reset errors and input fields
     this._addError = undefined;
-    newItem.value = "";
-    if (ev) {
-      newItem.focus();
-    }
+    nameEl.value = "";
+    qtyEl.value = "";
+    storeEl.value = "";
+
+    // Reset internal state
+    this._addQuantity = null;
+    this._addStore = undefined;
+
+    if (ev) nameEl.focus();
   }
 
   private _deleteItem(ev): void {
