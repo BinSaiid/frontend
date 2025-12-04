@@ -207,6 +207,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     return items.filter((item) => item.summary.toLowerCase().includes(query));
   }
 
+  private _getQuantityFromDescription(desc?: string): number | undefined {
+    if (!desc) return undefined;
+    for (const line of desc.split("\n")) {
+      const m = line.trim().match(/^quantity\s*[:=]\s*(.+)$/i);
+      if (!m) continue;
+      const q = Number((m[1] ?? "").trim());
+      if (Number.isFinite(q) && q > 0) return q;
+    }
+    return undefined;
+  }
+
   private _getItemsWithoutStatus = memoizeOne(
     (items?: TodoItem[], sort?: string | undefined): TodoItem[] =>
       items
@@ -310,6 +321,26 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                   @input=${this._clearAddError}
                   .disabled=${unavailable}
                 ></ha-textfield>
+
+                <ha-textfield
+                  class="addQty"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Qty"
+                  @keydown=${this._addKeyPress}
+                  @input=${this._clearAddError}
+                  .disabled=${unavailable}
+                ></ha-textfield>
+
+                <ha-textfield
+                  class="addStore"
+                  placeholder="Store"
+                  @keydown=${this._addKeyPress}
+                  @input=${this._clearAddError}
+                  .disabled=${unavailable}
+                ></ha-textfield>
+
                 <ha-icon-button
                   class="addButton"
                   .path=${mdiPlus}
@@ -318,9 +349,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                   )}
                   .disabled=${unavailable}
                   @click=${this._addItem}
-                >
-                </ha-icon-button>
+                ></ha-icon-button>
               </div>
+
               ${this._addError
                 ? html`<div class="addError">${this._addError}</div>`
                 : nothing}
@@ -444,6 +475,39 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     `;
   }
 
+  private _parseMeta(desc?: string) {
+    let store = "";
+    let quantity = NaN;
+
+    if (!desc) return { store, quantity };
+
+    for (const line of desc.split("\n")) {
+      const trimmed = line.trim();
+      const storeMatch = trimmed.match(/^store\s*[:=]\s*(.*)$/i);
+      if (storeMatch) {
+        store = (storeMatch[1] ?? "").trim();
+        continue;
+      }
+      const qtyMatch = trimmed.match(/^quantity\s*[:=]\s*(.*)$/i);
+      if (qtyMatch) {
+        const raw = (qtyMatch[1] ?? "").trim();
+        const q = Number(raw);
+        if (Number.isFinite(q)) quantity = q;
+      }
+    }
+    return { store, quantity };
+  }
+
+  private _buildDescription(store: string, qtyRaw: string) {
+    const lines: string[] = [];
+    const s = store.trim();
+    const q = qtyRaw.trim();
+
+    if (s) lines.push(`Store: ${s}`);
+    if (q) lines.push(`Quantity: ${q}`);
+    return lines.length ? lines.join("\n") : undefined;
+  }
+
   private _renderMenu(config: TodoListCardConfig, unavailable: boolean) {
     return (!config.display_order ||
       config.display_order === TodoSortMode.NONE) &&
@@ -507,7 +571,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               class="editRow ${classMap({
                 draggable: item.status !== TodoItemStatus.Completed,
                 completed: item.status === TodoItemStatus.Completed,
-                multiline: Boolean(item.description || item.due),
+                multiline: Boolean(item.due),
               })}"
               .selected=${item.status === TodoItemStatus.Completed}
               .disabled=${unavailable}
@@ -525,13 +589,23 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               @keydown=${this._handleKeydown}
             >
               <div class="column">
-                <span class="summary">${item.summary}</span>
-                ${item.description
-                  ? html`<ha-markdown-element
-                      class="description"
-                      .content=${item.description}
-                    ></ha-markdown-element>`
-                  : nothing}
+                <div class="summaryRow">
+                  <span class="summary">${item.summary}</span>
+                  ${(() => {
+                    const qty = this._getQuantityFromDescription(
+                      item.description
+                    );
+                    // show only when it exists and isn't 1
+                    return qty && qty !== 1
+                      ? html`<span class="qtyBadge" aria-label="Quantity"
+                          >×${qty}</span
+                        >`
+                      : nothing;
+                  })()}
+                </div>
+
+                <!-- Option A: hide description entirely (recommended for your goal) -->
+                ${nothing}
                 ${due
                   ? html`<div class="due ${due < new Date() ? "overdue" : ""}">
                       <ha-svg-icon .path=${mdiClock}></ha-svg-icon>${today
@@ -546,6 +620,7 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                     </div>`
                   : nothing}
               </div>
+
               ${showReorder
                 ? html`
                     <ha-svg-icon
@@ -605,6 +680,14 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
 
   private _requestSelected(ev: Event): void {
     ev.stopPropagation();
+  }
+
+  private get _newQuantity(): HaTextField {
+    return this.shadowRoot!.querySelector(".addQty") as HaTextField;
+  }
+
+  private get _newStore(): HaTextField {
+    return this.shadowRoot!.querySelector(".addStore") as HaTextField;
   }
 
   private _handleKeydown(ev) {
@@ -709,8 +792,13 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
 
   private _addItem(ev): void {
     const newItem = this._newItem;
+    const qtyField = this._newQuantity;
+    const storeField = this._newStore;
+
     const rawValue = newItem.value ?? "";
     const value = rawValue.trim();
+    const qtyRaw = (qtyField.value ?? "").trim();
+    const store = (storeField.value ?? "").trim();
 
     // Empty input: just clear error and do nothing
     if (!value.length) {
@@ -718,33 +806,48 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       return;
     }
 
-    const normalized = value.toLowerCase();
+    if (qtyRaw) {
+      const q = Number(qtyRaw);
+      if (!Number.isFinite(q) || q <= 0) {
+        this._addError = "Quantity must be a positive number";
+        return;
+      }
+    }
 
-    // Look for an existing item with the same summary (trimmed, case-insensitive)
+    const supportsDescription = this._todoListSupportsFeature(
+      TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM
+    );
+    const description = this._buildDescription(store, qtyRaw);
+
+    const normalizedSummary = value.toLowerCase();
+    const normalizedStore = store.toLowerCase();
+
     const existing = this._items?.find((item) => {
       const summary = (item.summary ?? "").trim().toLowerCase();
-      return summary === normalized;
+      const meta = this._parseMeta(item.description);
+      const exStore = (meta.store ?? "").trim().toLowerCase();
+      return summary === normalizedSummary && exStore === normalizedStore;
     });
 
     if (existing) {
       // If existing item is completed, "revive" it (set back to NeedsAction)
       if (existing.status === TodoItemStatus.Completed) {
-        updateItem(this.hass!, this._entityId!, {
+        const revivePayload: any = {
           uid: existing.uid,
           summary: existing.summary,
           status: TodoItemStatus.NeedsAction,
-        });
-        this._addError = undefined;
-      } else {
-        // Already active: show a small message and do NOT create a duplicate
-        this._addError =
-          this.hass?.localize(
-            "ui.panel.lovelace.cards.todo-list.item_already_exists"
-          ) || "Item is already in the list";
-        // this._addError = msg;
+        };
+
+        if (supportsDescription && (description ?? existing.description)) {
+          revivePayload.description = description ?? existing.description;
+        }
+
+        updateItem(this.hass!, this._entityId!, revivePayload);
       }
 
       newItem.value = "";
+      qtyField.value = "";
+      storeField.value = "";
       if (ev) {
         newItem.focus();
       }
@@ -752,12 +855,16 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
 
     // No existing item: create a fresh one
-    createItem(this.hass!, this._entityId!, {
-      summary: value,
-    });
+    const createPayload: any = { summary: value };
+    if (supportsDescription && description) {
+      createPayload.description = description;
+    }
+    createItem(this.hass!, this._entityId!, createPayload);
 
     this._addError = undefined;
     newItem.value = "";
+    qtyField.value = "";
+    storeField.value = "";
     if (ev) {
       newItem.focus();
     }
@@ -862,6 +969,29 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       overflow-y: auto;
     }
 
+    .summaryRow {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .summaryRow .summary {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .qtyBadge {
+      font-size: var(--ha-font-size-s);
+      color: var(--secondary-text-color);
+      border: 1px solid var(--divider-color);
+      border-radius: 999px;
+      padding: 2px 8px;
+      line-height: 1.4;
+    }
+
     .has-header {
       padding-top: 0;
     }
@@ -875,14 +1005,14 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     .addRow {
       padding: 16px;
       padding-bottom: 0;
-      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 90px 1fr auto;
+      gap: 8px;
+      align-items: center;
     }
 
     .addRow ha-icon-button {
-      position: absolute;
-      right: 16px;
-      inset-inline-start: initial;
-      inset-inline-end: 16px;
+      position: static;
     }
 
     .addRow,
@@ -890,6 +1020,10 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       display: flex;
       flex-direction: row;
       align-items: center;
+    }
+
+    .addQty {
+      width: 90px;
     }
 
     .searchRow {
