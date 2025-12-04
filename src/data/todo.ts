@@ -4,6 +4,29 @@ import { computeStateName } from "../common/entity/compute_state_name";
 import { isUnavailableState } from "./entity";
 import { stringCompare } from "../common/string/compare";
 
+export const STORE_LIST = [
+  "ICA",
+  "IKEA",
+  "H&M",
+  "Systembolaget",
+  "Coop",
+  "Willys",
+  "Elgiganten",
+  "Clas Ohlson",
+  "Biltema",
+  "Apoteket",
+  "Lindex",
+  "Jula",
+  "Rusta",
+  "KappAhl",
+  "Hemköp",
+  "Lidl",
+  "NetOnNet",
+  "Kjell & Company",
+  "Stadium",
+  "Pressbyrån",
+] as const;
+
 export interface TodoList {
   entity_id: string;
   name: string;
@@ -29,6 +52,8 @@ export interface TodoItem {
   description?: string | null;
   due?: string | null;
   completed?: string | null;
+  quantity?: number | null;
+  store?: string | null;
 }
 
 export const enum TodoListEntityFeature {
@@ -98,6 +123,8 @@ export const updateItem = (
         item.due === undefined || item.due?.includes("T")
           ? undefined
           : item.due,
+      quantity: item.quantity,
+      store: item.store,
     },
     { entity_id }
   );
@@ -118,6 +145,8 @@ export const createItem = (
         item.due === undefined || item.due?.includes("T")
           ? undefined
           : item.due,
+      quantity: item.quantity,
+      store: item.store,
     },
     { entity_id }
   );

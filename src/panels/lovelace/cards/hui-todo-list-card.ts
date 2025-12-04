@@ -40,6 +40,7 @@ import {
   TodoItemStatus,
   TodoListEntityFeature,
   TodoSortMode,
+  STORE_LIST,
   createItem,
   deleteItems,
   moveItem,
@@ -95,6 +96,10 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   @state() private _searchTerm = "";
 
   @state() private _addError?: string;
+
+  @state() private _addQuantity?: number;
+
+  @state() private _addStore?: string;
 
   private _unsubItems?: Promise<UnsubscribeFunc>;
 
@@ -310,6 +315,31 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                   @input=${this._clearAddError}
                   .disabled=${unavailable}
                 ></ha-textfield>
+                <ha-textfield
+                  class="addQuantity"
+                  type="number"
+                  min="1"
+                  .placeholder=${"Qty"}
+                  .value=${this._addQuantity ?? ""}
+                  @input=${this._handleQuantityInput}
+                  .disabled=${unavailable}
+                ></ha-textfield>
+                <ha-select
+                  class="addStore"
+                  .label=${"Store"}
+                  .value=${this._addStore ?? ""}
+                  @selected=${this._handleStoreSelect}
+                  .disabled=${unavailable}
+                  fixedMenuPosition
+                  naturalMenuWidth
+                >
+                  ${STORE_LIST.map(
+                    (store) =>
+                      html`<ha-list-item .value=${store}
+                        >${store}</ha-list-item
+                      >`
+                  )}
+                </ha-select>
                 <ha-icon-button
                   class="addButton"
                   .path=${mdiPlus}
@@ -507,7 +537,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
               class="editRow ${classMap({
                 draggable: item.status !== TodoItemStatus.Completed,
                 completed: item.status === TodoItemStatus.Completed,
-                multiline: Boolean(item.description || item.due),
+                multiline: Boolean(
+                  item.description || item.due || item.quantity || item.store
+                ),
               })}"
               .selected=${item.status === TodoItemStatus.Completed}
               .disabled=${unavailable}
@@ -526,6 +558,18 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
             >
               <div class="column">
                 <span class="summary">${item.summary}</span>
+                ${item.quantity || item.store
+                  ? html`<div class="metadata">
+                      ${item.quantity
+                        ? html`<span class="quantity"
+                            >Qty: ${item.quantity}</span
+                          >`
+                        : nothing}
+                      ${item.store
+                        ? html`<span class="store">${item.store}</span>`
+                        : nothing}
+                    </div>`
+                  : nothing}
                 ${item.description
                   ? html`<ha-markdown-element
                       class="description"
@@ -739,7 +783,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
         // Already active: show a small message and do NOT create a duplicate
         this._addError =
           this.hass?.localize(
-            "ui.panel.lovelace.cards.todo-list.item_already_exists"
+            // cast the key to any to satisfy typing for keys not included in LocalizeKeys
+            "ui.panel.lovelace.cards.todo-list.item_already_exists" as any
           ) || "Item is already in the list";
         // this._addError = msg;
       }
@@ -754,9 +799,13 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     // No existing item: create a fresh one
     createItem(this.hass!, this._entityId!, {
       summary: value,
+      quantity: this._addQuantity,
+      store: this._addStore,
     });
 
     this._addError = undefined;
+    this._addQuantity = undefined;
+    this._addStore = undefined;
     newItem.value = "";
     if (ev) {
       newItem.focus();
@@ -786,6 +835,17 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   private _handleSearchInput(ev: Event): void {
     const target = ev.currentTarget as HaTextField;
     this._searchTerm = target.value ?? "";
+  }
+
+  private _handleQuantityInput(ev: Event): void {
+    const target = ev.currentTarget as HaTextField;
+    const value = target.value;
+    this._addQuantity = value ? parseInt(value, 10) : undefined;
+  }
+
+  private _handleStoreSelect(ev: Event): void {
+    const target = ev.currentTarget as any;
+    this._addStore = target.value || undefined;
   }
 
   private _handlePrimaryMenuAction(ev: CustomEvent<ActionDetail>) {
@@ -876,13 +936,43 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       padding: 16px;
       padding-bottom: 0;
       position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .addBox {
+      grid-column: 1;
+    }
+
+    .addQuantity {
+      width: 70px;
+    }
+
+    .addStore {
+      width: 140px;
     }
 
     .addRow ha-icon-button {
-      position: absolute;
-      right: 16px;
-      inset-inline-start: initial;
-      inset-inline-end: 16px;
+      margin: 0;
+    }
+
+    @media (max-width: 600px) {
+      .addRow {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .addBox,
+      .addQuantity,
+      .addStore {
+        width: 100%;
+      }
+
+      .addRow ha-icon-button {
+        justify-self: end;
+      }
     }
 
     .addRow,
@@ -956,9 +1046,24 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     }
 
     .description,
-    .due {
+    .due,
+    .metadata {
       font-size: var(--ha-font-size-s);
       color: var(--secondary-text-color);
+    }
+
+    .metadata {
+      display: flex;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .quantity {
+      font-weight: var(--ha-font-weight-medium);
+    }
+
+    .store {
+      font-style: italic;
     }
 
     .description {

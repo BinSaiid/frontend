@@ -11,12 +11,15 @@ import "../../components/ha-button";
 import "../../components/ha-checkbox";
 import "../../components/ha-date-input";
 import { createCloseHeading } from "../../components/ha-dialog";
+import "../../components/ha-select";
+import "../../components/ha-list-item";
 import "../../components/ha-textarea";
 import "../../components/ha-textfield";
 import "../../components/ha-time-input";
 import {
   TodoItemStatus,
   TodoListEntityFeature,
+  STORE_LIST,
   createItem,
   deleteItems,
   updateItem,
@@ -50,6 +53,10 @@ class DialogTodoItemEditor extends LitElement {
 
   @state() private _submitting = false;
 
+  @state() private _quantity?: number;
+
+  @state() private _store?: string;
+
   // Dates are manipulated and displayed in the browser timezone
   // which may be different from the Home Assistant timezone. When
   // events are persisted, they are relative to the Home Assistant
@@ -68,6 +75,8 @@ class DialogTodoItemEditor extends LitElement {
       this._checked = entry.status === TodoItemStatus.Completed;
       this._summary = entry.summary;
       this._description = entry.description || "";
+      this._quantity = entry.quantity ?? undefined;
+      this._store = entry.store ?? undefined;
       this._completedTime = entry.completed
         ? new Date(entry.completed)
         : undefined;
@@ -79,6 +88,8 @@ class DialogTodoItemEditor extends LitElement {
       this._hasTime = false;
       this._checked = false;
       this._due = undefined;
+      this._quantity = undefined;
+      this._store = undefined;
     }
   }
 
@@ -91,6 +102,8 @@ class DialogTodoItemEditor extends LitElement {
     this._due = undefined;
     this._summary = "";
     this._description = "";
+    this._quantity = undefined;
+    this._store = undefined;
     this._hasTime = false;
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
@@ -171,6 +184,33 @@ class DialogTodoItemEditor extends LitElement {
                 .disabled=${!canUpdate}
               ></ha-textarea>`
             : nothing}
+          <div class="flex">
+            <ha-textfield
+              class="quantity"
+              type="number"
+              min="1"
+              .label=${"Quantity"}
+              .value=${this._quantity !== undefined && this._quantity !== null
+                ? String(this._quantity)
+                : ""}
+              @input=${this._handleQuantityChanged}
+              .disabled=${!canUpdate}
+            ></ha-textfield>
+            <ha-select
+              class="store"
+              .label=${"Store"}
+              .value=${this._store || ""}
+              @selected=${this._handleStoreChanged}
+              .disabled=${!canUpdate}
+              fixedMenuPosition
+              naturalMenuWidth
+            >
+              ${STORE_LIST.map(
+                (store) =>
+                  html`<ha-list-item .value=${store}>${store}</ha-list-item>`
+              )}
+            </ha-select>
+          </div>
           ${this._todoListSupportsFeature(
             TodoListEntityFeature.SET_DUE_DATE_ON_ITEM
           ) ||
@@ -292,6 +332,15 @@ class DialogTodoItemEditor extends LitElement {
     this._description = ev.target.value;
   }
 
+  private _handleQuantityChanged(ev) {
+    const value = ev.target.value;
+    this._quantity = value ? parseInt(value, 10) : undefined;
+  }
+
+  private _handleStoreChanged(ev) {
+    this._store = ev.target.value || undefined;
+  }
+
   private _dueDateChanged(ev: CustomEvent) {
     if (!ev.detail.value) {
       this._due = undefined;
@@ -321,6 +370,8 @@ class DialogTodoItemEditor extends LitElement {
       await createItem(this.hass!, this._params!.entity, {
         summary: this._summary,
         description: this._description,
+        quantity: this._quantity,
+        store: this._store,
         due: this._due
           ? this._hasTime
             ? this._due.toISOString()
@@ -358,6 +409,8 @@ class DialogTodoItemEditor extends LitElement {
           )
             ? null
             : undefined),
+        quantity: this._quantity,
+        store: this._store,
         due: this._due
           ? this._hasTime
             ? this._due.toISOString()
@@ -447,6 +500,13 @@ class DialogTodoItemEditor extends LitElement {
         .flex {
           display: flex;
           justify-content: space-between;
+          gap: 16px;
+        }
+        .quantity {
+          flex: 0 0 100px;
+        }
+        .store {
+          flex: 1;
         }
         .label {
           font-size: var(--ha-font-size-s);
