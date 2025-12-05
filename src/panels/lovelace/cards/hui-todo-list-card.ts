@@ -393,11 +393,9 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
             @input=${this._handleSearchInput}
             .disabled=${unavailable}
           ></ha-textfield>
-        </div>
 
-        <div class="searchRow">
           <ha-textfield
-            class="searchBox"
+            class="storeBox"
             placeholder="Filter by store"
             .value=${this._storeFilter}
             @input=${this._handleStoreFilterInput}
@@ -1069,10 +1067,14 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       display: flex;
       flex-direction: row;
       align-items: center;
+      gap: 8px; /* optional: space between boxes */
     }
 
     .searchBox {
-      width: 100%;
+      flex: 1;
+    }
+    .storeBox {
+      flex: 1; /* or flex: 0 0 40%; if you want it narrower */
     }
 
     .header {
