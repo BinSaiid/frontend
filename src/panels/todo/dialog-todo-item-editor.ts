@@ -9,6 +9,7 @@ import { supportsFeature } from "../../common/entity/supports-feature";
 import "../../components/ha-alert";
 import "../../components/ha-button";
 import "../../components/ha-checkbox";
+import "../../components/ha-combo-box";
 import "../../components/ha-date-input";
 import { createCloseHeading } from "../../components/ha-dialog";
 import "../../components/ha-select";
@@ -196,20 +197,20 @@ class DialogTodoItemEditor extends LitElement {
               @input=${this._handleQuantityChanged}
               .disabled=${!canUpdate}
             ></ha-textfield>
-            <ha-select
+            <ha-combo-box
               class="store"
               .label=${"Store"}
               .value=${this._store || ""}
-              @selected=${this._handleStoreChanged}
+              .items=${STORE_LIST.map((store) => ({
+                label: store,
+                value: store,
+              }))}
+              item-value-path="value"
+              item-label-path="label"
+              @value-changed=${this._handleStoreChanged}
               .disabled=${!canUpdate}
-              fixedMenuPosition
-              naturalMenuWidth
-            >
-              ${STORE_LIST.map(
-                (store) =>
-                  html`<ha-list-item .value=${store}>${store}</ha-list-item>`
-              )}
-            </ha-select>
+              allow-custom-value
+            ></ha-combo-box>
           </div>
           ${this._todoListSupportsFeature(
             TodoListEntityFeature.SET_DUE_DATE_ON_ITEM
@@ -338,7 +339,7 @@ class DialogTodoItemEditor extends LitElement {
   }
 
   private _handleStoreChanged(ev) {
-    this._store = ev.target.value || undefined;
+    this._store = ev.detail?.value || ev.target?.value || undefined;
   }
 
   private _dueDateChanged(ev: CustomEvent) {

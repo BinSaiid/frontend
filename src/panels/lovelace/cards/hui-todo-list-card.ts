@@ -24,6 +24,7 @@ import { caseInsensitiveStringCompare } from "../../../common/string/compare";
 import "../../../components/ha-card";
 import "../../../components/ha-check-list-item";
 import "../../../components/ha-checkbox";
+import "../../../components/ha-combo-box";
 import "../../../components/ha-icon-button";
 import "../../../components/ha-list";
 import "../../../components/ha-list-item";
@@ -94,6 +95,8 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
   @state() private _reordering = false;
 
   @state() private _searchTerm = "";
+
+  @state() private _filterStore = "";
 
   @state() private _addError?: string;
 
@@ -206,11 +209,27 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       return [];
     }
     const query = this._searchTerm.trim().toLowerCase();
-    if (!query) {
-      return items;
-    }
-    return items.filter((item) => item.summary.toLowerCase().includes(query));
+    const store = this._filterStore.trim();
+    
+    return items.filter((item) => {
+      const matchesSearch = !query || item.summary.toLowerCase().includes(query);
+      const matchesStore = !store || item.store === store;
+      return matchesSearch && matchesStore;
+    });
   }
+
+  private _getAvailableStores = memoizeOne((items?: TodoItem[]): string[] => {
+    if (!items) {
+      return [];
+    }
+    const stores = new Set<string>();
+    items.forEach((item) => {
+      if (item.store) {
+        stores.add(item.store);
+      }
+    });
+    return Array.from(stores).sort();
+  });
 
   private _getItemsWithoutStatus = memoizeOne(
     (items?: TodoItem[], sort?: string | undefined): TodoItem[] =>
@@ -324,22 +343,20 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
                   @input=${this._handleQuantityInput}
                   .disabled=${unavailable}
                 ></ha-textfield>
-                <ha-select
+                <ha-combo-box
                   class="addStore"
                   .label=${"Store"}
                   .value=${this._addStore ?? ""}
-                  @selected=${this._handleStoreSelect}
+                  .items=${STORE_LIST.map((store) => ({
+                    label: store,
+                    value: store,
+                  }))}
+                  item-value-path="value"
+                  item-label-path="label"
+                  @value-changed=${this._handleStoreInput}
                   .disabled=${unavailable}
-                  fixedMenuPosition
-                  naturalMenuWidth
-                >
-                  ${STORE_LIST.map(
-                    (store) =>
-                      html`<ha-list-item .value=${store}
-                        >${store}</ha-list-item
-                      >`
-                  )}
-                </ha-select>
+                  allow-custom-value
+                ></ha-combo-box>
                 <ha-icon-button
                   class="addButton"
                   .path=${mdiPlus}
@@ -364,6 +381,23 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
             @input=${this._handleSearchInput}
             .disabled=${unavailable}
           ></ha-textfield>
+          <ha-combo-box
+            class="filterStore"
+            .label=${"Filter by store"}
+            .value=${this._filterStore || "All stores"}
+            .items=${[
+              { label: "All stores", value: "All stores" },
+              ...this._getAvailableStores(this._items).map((store) => ({
+                label: store,
+                value: store,
+              })),
+            ]}
+            item-value-path="value"
+            item-label-path="label"
+            @value-changed=${this._handleStoreFilterInput}
+            .disabled=${unavailable}
+            allow-custom-value
+          ></ha-combo-box>
         </div>
 
         <ha-sortable
@@ -837,15 +871,19 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
     this._searchTerm = target.value ?? "";
   }
 
+  private _handleStoreFilterInput(ev: CustomEvent): void {
+    const value = ev.detail.value ?? "";
+    this._filterStore = value === "All stores" ? "" : value;
+  }
+
   private _handleQuantityInput(ev: Event): void {
     const target = ev.currentTarget as HaTextField;
     const value = target.value;
     this._addQuantity = value ? parseInt(value, 10) : undefined;
   }
 
-  private _handleStoreSelect(ev: Event): void {
-    const target = ev.currentTarget as any;
-    this._addStore = target.value || undefined;
+  private _handleStoreInput(ev: CustomEvent): void {
+    this._addStore = ev.detail.value || undefined;
   }
 
   private _handlePrimaryMenuAction(ev: CustomEvent<ActionDetail>) {
@@ -987,10 +1025,28 @@ export class HuiTodoListCard extends LitElement implements LovelaceCard {
       display: flex;
       flex-direction: row;
       align-items: center;
+      gap: 8px;
     }
 
     .searchBox {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .filterStore {
+      width: 160px;
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 600px) {
+      .searchRow {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .filterStore {
+        width: 100%;
+      }
     }
 
     .header {
